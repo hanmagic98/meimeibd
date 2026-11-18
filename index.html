@@ -211,16 +211,8 @@
   }
   .toast.show{opacity:1;transform:translate(-50%,0)}
 
-  /* song */
-  .song-card{
-    background:rgba(255,255,255,.82);border:1px solid rgba(240,201,220,.8);border-radius:26px;
-    padding:20px 18px 16px;box-shadow:0 12px 34px rgba(110,112,114,.14);text-align:center;
-  }
-  .song-label{font-family:var(--script);font-size:30px;color:var(--ink);line-height:1.2;margin-bottom:12px}
-  .song-frame{height:220px;border-radius:18px;overflow:hidden;background:var(--mist);border:4px solid var(--paper);box-shadow:0 8px 20px rgba(110,112,114,.18)}
-  .song-frame iframe{width:100%;height:100%;display:block;border:0}
-  .song-caption{margin-top:12px;font-size:15px;color:var(--ink);font-weight:500}
-  .song-link{display:inline-block;margin-top:6px;font-size:13px;color:var(--teal-deep);text-decoration:none;padding:6px 8px}
+  /* music: the YouTube player stays out of sight, only the small button is shown */
+  #ytwrap{position:fixed;left:0;top:0;width:200px;height:200px;opacity:.01;pointer-events:none;z-index:-1;overflow:hidden}
   .music-btn{
     position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:40;
     width:52px;height:52px;border-radius:50%;border:3px solid var(--paper);cursor:pointer;
@@ -281,15 +273,6 @@
       <p class="lead">Happy birthday ke-29, sayang!</p>
       <p>Aku seneng bngt dan bersyukur kamu hadir di hidup aku. Tiap hari sama kamu tuh rasanya kayak hadiah, hehe.</p>
       <p>Kamu bikin hari-hari biasa jadi spesial. Di mana pun, asal di sebelah kamu, rasanya udah kayak di rumah.</p>
-    </div>
-  </section>
-
-  <section>
-    <div class="song-card reveal">
-      <div class="song-label">♪ Lagu buat kamu</div>
-      <div class="song-frame"><div id="ytplayer"></div></div>
-      <div class="song-caption">Kiss Me · cover saksofon</div>
-      <a class="song-link" href="https://www.youtube.com/watch?v=Zy6JnNk3boY" target="_blank" rel="noopener">Ga kedengeran? Buka di YouTube ↗</a>
     </div>
   </section>
 
@@ -497,6 +480,8 @@
 
 <div id="lightbox" role="dialog" aria-label="Penampil foto"><img alt=""></div>
 
+<div id="ytwrap" aria-hidden="true"><div id="ytplayer"></div></div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <button class="music-btn" id="musicBtn" type="button" aria-label="Putar lagu" hidden>♪</button>
@@ -566,29 +551,38 @@
     if(pieces.length){requestAnimationFrame(tick)} else {running = false; ctx.clearRect(0,0,innerWidth,innerHeight)}
   }
 
-  /* song (YouTube player; created while the cover is up so the cover tap can start it) */
-  var VIDEO_ID = 'Zy6JnNk3boY', yt = null, ytReady = false, wantPlay = false;
+  /* background music: YouTube audio with the player kept out of sight.
+     Starts from the cover tap, retries on the next touch if the phone blocked it, and loops forever. */
+  var VIDEO_ID = 'Zy6JnNk3boY', yt = null, ytReady = false, wantPlay = false, userPaused = false;
   var musicBtn = document.getElementById('musicBtn');
   function setMusicIcon(playing){
-    musicBtn.textContent = playing ? '❚❚' : '♪';
+    musicBtn.textContent = playing ? '\u275A\u275A' : '\u266A';
     musicBtn.setAttribute('aria-label', playing ? 'Jeda lagu' : 'Putar lagu');
   }
+  function tryPlay(){
+    if(!ytReady || !wantPlay || userPaused) return;
+    try{ if(yt.getPlayerState() !== 1){ yt.playVideo(); } }catch(e){}
+  }
   window.onYouTubeIframeAPIReady = function(){
-    var vars = {playsinline:1, rel:0, modestbranding:1, loop:1, playlist:VIDEO_ID};
+    var vars = {playsinline:1, controls:0, disablekb:1, fs:0, rel:0, iv_load_policy:3, modestbranding:1, loop:1, playlist:VIDEO_ID};
     if(location.protocol === 'http:' || location.protocol === 'https:'){ vars.origin = location.origin; }
     try{
       yt = new YT.Player('ytplayer', {
-        videoId: VIDEO_ID, width:'100%', height:'100%', playerVars: vars,
+        videoId: VIDEO_ID, width:'200', height:'200', playerVars: vars,
         events: {
           onReady: function(){
             ytReady = true;
             try{ yt.setVolume(70); }catch(e){}
             musicBtn.hidden = false;
-            if(wantPlay){ try{ yt.playVideo(); }catch(e){} }
+            tryPlay();
           },
           onStateChange: function(e){
             if(e.data === 1){ setMusicIcon(true); }
-            else if(e.data === 2 || e.data === 0){ setMusicIcon(false); }
+            else if(e.data === 2){ setMusicIcon(false); }
+            else if(e.data === 0){
+              setMusicIcon(false);
+              try{ yt.seekTo(0); yt.playVideo(); }catch(x){}
+            }
           },
           onError: function(){ musicBtn.hidden = true; }
         }
@@ -599,15 +593,19 @@
   ytTag.src = 'https://www.youtube.com/iframe_api';
   document.head.appendChild(ytTag);
   function startSong(){
-    wantPlay = true;
-    if(ytReady){ try{ yt.playVideo(); }catch(e){} }
+    wantPlay = true; userPaused = false;
+    tryPlay();
+    setTimeout(tryPlay, 700);
+    setTimeout(tryPlay, 2000);
   }
   musicBtn.addEventListener('click', function(){
     if(!ytReady) return;
     try{
-      if(yt.getPlayerState() === 1){ yt.pauseVideo(); } else { yt.playVideo(); }
+      if(yt.getPlayerState() === 1){ userPaused = true; yt.pauseVideo(); }
+      else { userPaused = false; yt.playVideo(); }
     }catch(e){}
   });
+  ['touchend','click'].forEach(function(ev){ document.addEventListener(ev, tryPlay, {passive:true}); });
 
   /* open the card */
   var cover = document.getElementById('cover'), card = document.getElementById('card');
